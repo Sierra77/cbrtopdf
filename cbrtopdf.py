@@ -1,46 +1,81 @@
 #!/usr/bin/python
 
-import sys, os
-import patoolib
-import img2pdf
+import os
 import shutil
+import argparse
+import patoolib
+from PIL import Image
+from PyPDF2 import PdfFileMerger
 
-def image_extractor(source, tmp_folder):
-    # print("Extracting "+source+" to "+tmp_folder)
-    patoolib.extract_archive(source,outdir=tmp_folder)
-    # print("Done")
 
-def convert_extension(source):
+def load_config():
+    options = argparse.ArgumentParser()
+    options.add_argument("--output", '-o',
+            help="Select a destination output file. Default: current directory")
+    options.add_argument("--source", '-s',
+                         help="Select source file")
+
+    return options.parse_args()
+
+
+def image_extractor(source, destination_folder):
+    patoolib.extract_archive(source, verbosity=-1, outdir=destination_folder)
+
+
+def convert_extension_to_pdf(source):
     raw = os.path.splitext(source)[0]
-    return str(raw+".pdf")
+    return str(raw + ".pdf")
 
 
-def image_to_pdf(image_list_path,output_name,tmp_folder):
+def image_to_pdf(image_list, tmp_folder, output_name):
     os.chdir(tmp_folder)
-    print(output_name)
-    with open(output_name, "wb") as f:
-        f.write(img2pdf.convert([i for i in image_list_path if i.endswith(".jpg")]))
 
-SOURCE=sys.argv[1]
-SOURCE_PATH=os.path.dirname(SOURCE)
+    for image in image_list:
+        image1 = Image.open(image)
+        im1 = image1.convert('RGB')
+        im1.save(image + ".pdf")
+        os.remove(image)
 
-if SOURCE_PATH == "":
-    SOURCE_PATH = os.getcwd()
-    SOURCE= SOURCE_PATH + "/" + sys.argv[1]
-    TMP_FOLDER = SOURCE_PATH + "/" + ".tmp_images"
+    pdf_list = sorted(os.listdir(tmp_folder))
+    merger = PdfFileMerger()
 
-else:
-    if SOURCE_PATH != "":
-        TMP_FOLDER = SOURCE_PATH + "/" + ".tmp_images"
+    for pdf in pdf_list:
+        merger.append(open(pdf, 'rb'))
 
-os.makedirs(TMP_FOLDER)
+    with open(output_name, "wb") as destination_file:
+        merger.write(destination_file)
 
-image_extractor(SOURCE, TMP_FOLDER)
 
-image_list_path=sorted(os.listdir(TMP_FOLDER))
+def main():
+    config = load_config()
 
-converted_name=convert_extension(SOURCE)
+    filepath = config.source
 
-image_to_pdf(image_list_path,converted_name,TMP_FOLDER)
+    if os.path.dirname(filepath) == '' or os.path.dirname(filepath) is None:
+        filepath = os.getcwd() + "/" + filepath
 
-shutil.rmtree(TMP_FOLDER)
+    temp_folder_name = ".cbrtopdf_temp_folder"
+
+    temp_folder_path = os.path.dirname(filepath) + "/" + temp_folder_name
+
+    if os.path.exists(temp_folder_path):
+        shutil.rmtree(temp_folder_path)
+
+    os.makedirs(temp_folder_path)
+
+    image_extractor(filepath, temp_folder_path)
+
+    image_list = sorted(os.listdir(temp_folder_path))
+
+    if config.output is None:
+        destination_file = convert_extension_to_pdf(filepath)
+    else:
+        destination_file = config.output
+
+    image_to_pdf(image_list, temp_folder_path, destination_file)
+
+    shutil.rmtree(temp_folder_path)
+
+
+if __name__ == '__main__':
+    main()
